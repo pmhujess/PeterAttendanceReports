@@ -76,5 +76,41 @@ def process_zoom_reports():
     except Exception as e:
         logging.error(f"Error processing Slack command: {e}")
 
+def get_recent_meetings():
+    headers = {
+        "Authorization": f"Bearer {get_zoom_access_token()}",
+        "Content-Type": "application/json"
+    }
+    response = requests.get(f"{BASE_URL}/users/me/meetings", headers=headers)
+    meetings = response.json().get("meetings", [])
+    return [meeting["uuid"] for meeting in meetings]
+
+def get_zoom_meeting_report(meeting_uuid):
+    headers = {
+        "Authorization": f"Bearer {get_zoom_access_token()}",
+        "Content-Type": "application/json"
+    }
+    response = requests.get(f"{BASE_URL}/report/meetings/{meeting_uuid}/participants", headers=headers)
+    return response.json().get("participants", [])
+
+def save_report_to_csv(participants, filename):
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Name", "Email", "Join Time", "Leave Time", "Duration (Minutes)"])
+        for participant in participants:
+            writer.writerow([participant.get("name"), participant.get("email"), participant.get("join_time"), participant.get("leave_time"), participant.get("duration")])
+
+def get_zoom_access_token():
+    response = requests.post("https://zoom.us/oauth/token", data={
+        "grant_type": "account_credentials",
+        "account_id": ZOOM_ACCOUNT_ID
+    }, headers={
+        "Authorization": f"Basic {base64.b64encode(f'{ZOOM_CLIENT_ID}:{ZOOM_CLIENT_SECRET}'.encode()).decode()}"
+    })
+    return response.json().get("access_token")
+
+def sanitize_filename(filename):
+    return re.sub(r'[^a-zA-Z0-9]', '_', filename)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
