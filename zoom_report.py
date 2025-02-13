@@ -38,8 +38,8 @@ def slack_command():
     logging.debug(f"Received Slack request: {data}")
     
     # Log the expected and received tokens for debugging
-    logging.debug(f"Expected Slack token: {SLACK_VERIFICATION_TOKEN}")
-    logging.debug(f"Received Slack token: {data.get('token')}")
+    logging.debug(f"Expected Slack token from Heroku: {SLACK_VERIFICATION_TOKEN}")
+    logging.debug(f"Received Slack token from Slack: {data.get('token')}")
 
     if "command" not in data:
         logging.error("Invalid request: Missing command field")
@@ -47,7 +47,11 @@ def slack_command():
     
     if data.get("token") != SLACK_VERIFICATION_TOKEN:
         logging.error("Invalid Slack token received")
-        return jsonify({"error": "Invalid request: Token mismatch"}), 403
+        return jsonify({
+            "error": "Invalid request: Token mismatch",
+            "expected": SLACK_VERIFICATION_TOKEN,
+            "received": data.get("token")
+        }), 403
     
     logging.info("Valid Slack request received")
     
