@@ -47,6 +47,16 @@ def slack_command():
     
     logging.info("Valid Slack request received")
     
+    response_message = {
+        "response_type": "in_channel",
+        "text": "Processing your Zoom report request... ⏳"
+    }
+    
+    process_zoom_reports()
+    
+    return jsonify(response_message)
+
+def process_zoom_reports():
     try:
         meeting_uuids = get_recent_meetings()
         reports = []
@@ -60,12 +70,11 @@ def slack_command():
                 reports.append(f"Report for meeting {sanitized_uuid} generated successfully!")
         
         if reports:
-            return jsonify({"response_type": "in_channel", "text": "\n".join(reports)})
+            logging.info(f"Reports generated: {reports}")
         else:
-            return jsonify({"response_type": "ephemeral", "text": "No meetings found in the specified timeframe."})
+            logging.info("No meetings found in the specified timeframe.")
     except Exception as e:
         logging.error(f"Error processing Slack command: {e}")
-        return jsonify({"response_type": "ephemeral", "text": "An error occurred while processing your request."}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
