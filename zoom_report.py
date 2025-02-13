@@ -23,9 +23,11 @@ def home():
     return "Zoom Report Bot is running successfully!"
 
 # Zoom API Credentials
-ZOOM_ACCOUNT_ID = "bVpWBvoVTdeRlnfMBxfTJQ"
-ZOOM_CLIENT_ID = "jAlEOB2cRHugcQt2bTjGAA"
-ZOOM_CLIENT_SECRET = "s6VQLn3iHqgXfcUPRLikX9UIMvQgzg7N"
+ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
+ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
+ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
+ZOOM_EMAIL = os.getenv("ZOOM_EMAIL")
+ZOOM_APP_PASSWORD = os.getenv("ZOOM_APP_PASSWORD")
 BASE_URL = 'https://api.zoom.us/v2'
 TARGET_DAYS = [0, 1]  # Monday = 0, Tuesday = 1
 TARGET_START_HOUR = 5  # 5 AM EST
@@ -85,20 +87,14 @@ def process_zoom_reports():
         logging.error(f"Error processing Slack command: {e}")
 
 def get_recent_meetings():
-    headers = {
-        "Authorization": f"Bearer {get_zoom_access_token()}",
-        "Content-Type": "application/json"
-    }
+    headers = get_zoom_headers()
     response = requests.get(f"{BASE_URL}/users/me/meetings", headers=headers)
     logging.debug(f"Zoom API Response for Recent Meetings: {response.status_code} - {response.text}")
     meetings = response.json().get("meetings", [])
     return [meeting["uuid"] for meeting in meetings]
 
 def get_zoom_meeting_report(meeting_uuid):
-    headers = {
-        "Authorization": f"Bearer {get_zoom_access_token()}",
-        "Content-Type": "application/json"
-    }
+    headers = get_zoom_headers()
     response = requests.get(f"{BASE_URL}/report/meetings/{meeting_uuid}/participants", headers=headers)
     logging.debug(f"Zoom API Response for Meeting {meeting_uuid}: {response.status_code} - {response.text}")
     return response.json().get("participants", [])
@@ -110,13 +106,33 @@ def save_report_to_csv(participants, filename):
         for participant in participants:
             writer.writerow([participant.get("name"), participant.get("email"), participant.get("join_time"), participant.get("leave_time"), participant.get("duration")])
 
+def get_zoom_headers():
+    access_token = get_zoom_access_token()
+    if access_token:
+        return {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+    elif ZOOM_EMAIL and ZOOM_APP_PASSWORD:
+        return {
+            "Authorization": f"Basic {base64.b64encode(f'{ZOOM_EMAIL}:{ZOOM_APP_PASSWORD}'.encode()).decode()}",
+            "Content-Type": "application/json"
+        }
+    else:
+        raise ValueError("No valid authentication method for Zoom API")
+
 def get_zoom_access_token():
+    if not ZOOM_CLIENT_ID or not ZOOM_CLIENT_SECRET or not ZOOM_ACCOUNT_ID:
+        logging.warning("OAuth credentials missing. Trying basic auth...")
+        return None
+    
     response = requests.post("https://zoom.us/oauth/token", data={
         "grant_type": "account_credentials",
         "account_id": ZOOM_ACCOUNT_ID
     }, headers={
         "Authorization": f"Basic {base64.b64encode(f'{ZOOM_CLIENT_ID}:{ZOOM_CLIENT_SECRET}'.encode()).decode()}"
     })
+    
     logging.debug(f"Zoom OAuth Response: {response.status_code} - {response.text}")
     return response.json().get("access_token")
 
