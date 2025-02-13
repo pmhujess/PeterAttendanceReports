@@ -37,22 +37,35 @@ def slack_command():
     data = request.form
     logging.debug(f"Received Slack request: {data}")
     
+    if "command" not in data:
+        logging.error("Invalid request: Missing command field")
+        return jsonify({"error": "Invalid request: No command received"}), 400
+    
     if data.get("token") != SLACK_VERIFICATION_TOKEN:
         logging.error("Invalid Slack token received")
-        return jsonify({"error": "Invalid request"}), 403
+        return jsonify({"error": "Invalid request: Token mismatch"}), 403
     
-    meeting_uuids = get_recent_meetings()
-    for meeting_uuid in meeting_uuids:
-        participants = get_zoom_meeting_report(meeting_uuid)
+    logging.info("Valid Slack request received")
+    
+    try:
+        meeting_uuids = get_recent_meetings()
+        reports = []
         
-        if participants:
-            sanitized_uuid = sanitize_filename(meeting_uuid)
-            report_filename = f"zoom_report_{sanitized_uuid}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-            save_report_to_csv(participants, report_filename)
-            
-            return jsonify({"text": f"Report for meeting {sanitized_uuid} generated successfully!"})
-    
-    return jsonify({"text": "No meetings found in the specified timeframe."})
+        for meeting_uuid in meeting_uuids:
+            participants = get_zoom_meeting_report(meeting_uuid)
+            if participants:
+                sanitized_uuid = sanitize_filename(meeting_uuid)
+                report_filename = f"zoom_report_{sanitized_uuid}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+                save_report_to_csv(participants, report_filename)
+                reports.append(f"Report for meeting {sanitized_uuid} generated successfully!")
+        
+        if reports:
+            return jsonify({"text": "\n".join(reports)})
+        else:
+            return jsonify({"text": "No meetings found in the specified timeframe."})
+    except Exception as e:
+        logging.error(f"Error processing Slack command: {e}")
+        return jsonify({"text": "An error occurred while processing your request."}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
