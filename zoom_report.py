@@ -30,7 +30,7 @@ BASE_URL = 'https://api.zoom.us/v2'
 TARGET_DAYS = [0, 1]  # Monday = 0, Tuesday = 1
 TARGET_START_HOUR = 5  # 5 AM EST
 TARGET_END_HOUR = 9  # 9 AM EST
-SLACK_VERIFICATION_TOKEN = "your_slack_verification_token"
+SLACK_VERIFICATION_TOKEN = os.getenv("SLACK_VERIFICATION_TOKEN")
 
 @app.route("/slack", methods=["POST"])
 def slack_command():
@@ -60,12 +60,12 @@ def slack_command():
                 reports.append(f"Report for meeting {sanitized_uuid} generated successfully!")
         
         if reports:
-            return jsonify({"text": "\n".join(reports)})
+            return jsonify({"response_type": "in_channel", "text": "\n".join(reports)})
         else:
-            return jsonify({"text": "No meetings found in the specified timeframe."})
+            return jsonify({"response_type": "ephemeral", "text": "No meetings found in the specified timeframe."})
     except Exception as e:
         logging.error(f"Error processing Slack command: {e}")
-        return jsonify({"text": "An error occurred while processing your request."}), 500
+        return jsonify({"response_type": "ephemeral", "text": "An error occurred while processing your request."}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
