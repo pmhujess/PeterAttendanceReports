@@ -37,6 +37,10 @@ def slack_command():
     data = request.form
     logging.debug(f"Received Slack request: {data}")
     
+    # Log the expected and received tokens for debugging
+    logging.debug(f"Expected Slack token: {SLACK_VERIFICATION_TOKEN}")
+    logging.debug(f"Received Slack token: {data.get('token')}")
+
     if "command" not in data:
         logging.error("Invalid request: Missing command field")
         return jsonify({"error": "Invalid request: No command received"}), 400
