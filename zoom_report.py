@@ -90,6 +90,7 @@ def get_recent_meetings():
         "Content-Type": "application/json"
     }
     response = requests.get(f"{BASE_URL}/users/me/meetings", headers=headers)
+    logging.debug(f"Zoom API Response for Recent Meetings: {response.status_code} - {response.text}")
     meetings = response.json().get("meetings", [])
     return [meeting["uuid"] for meeting in meetings]
 
@@ -99,6 +100,7 @@ def get_zoom_meeting_report(meeting_uuid):
         "Content-Type": "application/json"
     }
     response = requests.get(f"{BASE_URL}/report/meetings/{meeting_uuid}/participants", headers=headers)
+    logging.debug(f"Zoom API Response for Meeting {meeting_uuid}: {response.status_code} - {response.text}")
     return response.json().get("participants", [])
 
 def save_report_to_csv(participants, filename):
@@ -115,6 +117,7 @@ def get_zoom_access_token():
     }, headers={
         "Authorization": f"Basic {base64.b64encode(f'{ZOOM_CLIENT_ID}:{ZOOM_CLIENT_SECRET}'.encode()).decode()}"
     })
+    logging.debug(f"Zoom OAuth Response: {response.status_code} - {response.text}")
     return response.json().get("access_token")
 
 def sanitize_filename(filename):
