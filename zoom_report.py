@@ -14,6 +14,10 @@ from datetime import datetime, timedelta, timezone
 # Initialize Flask app
 app = Flask(__name__)
 
+@app.route("/")
+def home():
+    return "Zoom Report Bot is running successfully!"
+
 # Zoom API Credentials
 ZOOM_ACCOUNT_ID = "bVpWBvoVTdeRlnfMBxfTJQ"
 ZOOM_CLIENT_ID = "jAlEOB2cRHugcQt2bTjGAA"
