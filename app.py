@@ -95,6 +95,10 @@ def get_zoom_meeting_report(meeting_uuid):
     else:
         raise Exception(f"Failed to fetch report: {response.text}")
 
+# 🔹 Function: Sanitize Filename (Remove Special Characters)
+def sanitize_filename(filename):
+    return re.sub(r'[\/:*?"<>|]', '_', filename)  # Replaces invalid characters with `_`
+
 # 🔹 Function: Save Report to CSV
 def save_report_to_csv(participants, filename):
     with open(filename, mode='w', newline='') as file:
@@ -136,9 +140,11 @@ def run_report():
             return jsonify({"status": "No meetings found in target range."})
 
         for meeting_uuid in meeting_uuids:
+            sanitized_uuid = sanitize_filename(meeting_uuid)  # 🔹 Sanitize filename
+            report_filename = f"zoom_report_{sanitized_uuid}.csv"
+
             participants = get_zoom_meeting_report(meeting_uuid)
             if participants:
-                report_filename = f"zoom_report_{meeting_uuid}.csv"
                 save_report_to_csv(participants, report_filename)
                 send_email_report(RECIPIENT_EMAIL, f"Zoom Report - {meeting_uuid}", "Attached is the Zoom meeting report.", report_filename)
 
