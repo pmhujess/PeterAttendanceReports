@@ -76,4 +76,78 @@ def get_recent_meetings():
             if start_time_str:
                 start_time = datetime.strptime(start_time_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 est_time = start_time.astimezone(timezone(timedelta(hours=-5)))  # Convert UTC to EST
-           
+                if est_time.weekday() in TARGET_DAYS and TARGET_START_HOUR <= est_time.hour < TARGET_END_HOUR:
+                    filtered_meetings.append(meeting["uuid"])
+        
+        return filtered_meetings
+    else:
+        raise Exception(f"Failed to fetch meetings: {response.text}")
+
+# 🔹 Function: Get Participants of a Meeting
+def get_zoom_meeting_report(meeting_uuid):
+    encoded_uuid = urllib.parse.quote(meeting_uuid, safe='')
+    url = f"{BASE_URL}/report/meetings/{encoded_uuid}/participants"
+    headers = {"Authorization": f"Bearer {get_zoom_access_token()}", "Content-Type": "application/json"}
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        return response.json().get('participants', [])
+    else:
+        raise Exception(f"Failed to fetch report: {response.text}")
+
+# 🔹 Function: Save Report to CSV
+def save_report_to_csv(participants, filename):
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Name', 'Email', 'Join Time', 'Leave Time', 'Duration (mins)'])
+        for p in participants:
+            writer.writerow([p['name'], p['user_email'], p['join_time'], p['leave_time'], p['duration']])
+
+# 🔹 Function: Send Email Report
+def send_email_report(to_email, subject, body, attachment_path):
+    message = MIMEMultipart()
+    message['From'] = SENDER_EMAIL
+    message['To'] = to_email
+    message['Subject'] = subject
+    message.attach(MIMEText(body, "plain"))
+
+    # Attach CSV Report
+    with open(attachment_path, "rb") as attachment:
+        part = MIMEApplication(attachment.read(), Name=attachment_path)
+        part['Content-Disposition'] = f'attachment; filename="{attachment_path}"'
+        message.attach(part)
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, to_email, message.as_string())
+
+# 🔹 Function: Home Page Route
+@app.route('/')
+def home():
+    return "Flask App is Running! Try /run-report"
+
+# 🔹 Function: Run Zoom Report & Email
+@app.route('/run-report', methods=['GET'])
+def run_report():
+    try:
+        meeting_uuids = get_recent_meetings()
+        if not meeting_uuids:
+            return jsonify({"status": "No meetings found in target range."})
+
+        for meeting_uuid in meeting_uuids:
+            participants = get_zoom_meeting_report(meeting_uuid)
+            if participants:
+                report_filename = f"zoom_report_{meeting_uuid}.csv"
+                save_report_to_csv(participants, report_filename)
+                send_email_report(RECIPIENT_EMAIL, f"Zoom Report - {meeting_uuid}", "Attached is the Zoom meeting report.", report_filename)
+
+        return jsonify({"status": "Report Generated & Emailed!", "meetings_processed": len(meeting_uuids)})
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+# 🔹 Run the app on Render-friendly settings
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))  # Render assigns a dynamic port
+    app.run(host='0.0.0.0', port=port, debug=True)
