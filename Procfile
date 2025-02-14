@@ -1,1 +1,1 @@
-web: gunicorn zoom_report:app
+web: gunicorn app:app
