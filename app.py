@@ -28,7 +28,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SENDER_EMAIL = "jessica@pmhu.org"  # 🔹 Change this
 SENDER_PASSWORD = "zeaj jskj lfsf rvld"  # 🔹 Change this (Use App Password)
-RECIPIENT_EMAIL = "jessicaboykin@gmail.com"  # 🔹 Change this
+RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "jessica@pmhu.org")  # Uses default if not set # 🔹 Change this
 
 # 🔹 Function: Get Zoom API Access Token
 def get_zoom_access_token():
