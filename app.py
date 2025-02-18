@@ -208,6 +208,7 @@ def run_report():
                             "filename": report_filename,
                             "subject": f"Zoom Report - {meeting_date} {earliest_join} - {participant_count} Participants",
                             "date": meeting_date,
+                            "earliest_join": earliest_join,
                             "participants": participant_count
                         })
 
@@ -217,10 +218,9 @@ def run_report():
             })
 
         elif action == 'send':
-            # Second step: Send selected reports
             recipient_email = request.form.get('recipient_email')
             selected_reports = request.form.getlist('selected_reports[]')
-            
+    
             if not recipient_email:
                 return jsonify({"error": "Recipient email is required"}), 400
             if not selected_reports:
@@ -228,13 +228,15 @@ def run_report():
 
             for report in selected_reports:
                 try:
-                    # Parse the report info from the string
-                    report_data = eval(report)  # Be careful with eval, sanitize input in production
+                    # Use json.loads instead of eval for safety
+                    import json
+                    report_data = json.loads(report)
+                    
                     send_email_report(
                         recipient_email,
                         report_data['date'],
-                        report_data['time'],
-                        report_data['count'],
+                        report_data['earliest_join'],
+                        report_data['participants'],
                         "Attached is the Zoom meeting report.",
                         report_data['filename']
                     )
