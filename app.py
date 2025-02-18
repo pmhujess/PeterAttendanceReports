@@ -10,6 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify
+import pandas as pd  # Add this import at the top of the file
 
 # Flask app setup
 app = Flask(__name__)
@@ -101,11 +102,37 @@ def sanitize_filename(filename):
 
 # 🔹 Function: Save Report to CSV
 def save_report_to_csv(participants, filename):
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Name', 'Email', 'Join Time', 'Leave Time', 'Duration (mins)'])
-        for p in participants:
-            writer.writerow([p['name'], p['user_email'], p['join_time'], p['leave_time'], p['duration']])
+    """
+    Processes Zoom participant data to:
+    - Remove duplicates (group by email)
+    - Correctly calculate total time in the meeting.
+    """
+
+    # Convert raw participant data to a DataFrame
+    df = pd.DataFrame(participants)
+
+    if df.empty:
+        print("No participants found.")
+        return
+
+    # Ensure correct data types for time calculations
+    df['join_time'] = pd.to_datetime(df['join_time'])
+    df['leave_time'] = pd.to_datetime(df['leave_time'])
+
+    # Group by Email and calculate correct duration
+    grouped_df = df.groupby('user_email').agg({
+        'name': 'first',  # Keep the first name entry
+        'join_time': 'min',  # First time they joined
+        'leave_time': 'max',  # Last time they left
+    }).reset_index()
+
+    # Calculate the correct duration in minutes
+    grouped_df['duration'] = (grouped_df['leave_time'] - grouped_df['join_time']).dt.total_seconds() / 60
+
+    # Save to CSV
+    grouped_df.to_csv(filename, index=False)
+    print(f"Report saved successfully: {filename}")
+
 
 # 🔹 Function: Send Email Report
 def send_email_report(to_email, subject, body, attachment_path):
