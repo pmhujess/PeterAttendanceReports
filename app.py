@@ -117,7 +117,7 @@ def save_report_to_csv(participants, filename):
     
     # Handle timezone conversion
     grouped_df['join_time'] = pd.to_datetime(grouped_df['join_time']).dt.tz_convert('US/Eastern')
-    grouped_df['First Join Time (EST)'] = grouped_df['join_time'].dt.strftime('%Y-%m-%d %I:%M %p')
+    grouped_df['Join Time (EST)'] = grouped_df['join_time'].dt.strftime('%Y-%m-%d %I:%M %p')
     
     # Sort by join time
     grouped_df = grouped_df.sort_values('join_time')
@@ -130,15 +130,15 @@ def save_report_to_csv(participants, filename):
     # Rename columns to match Zoom format
     grouped_df = grouped_df.rename(columns={
         'name': 'Name (original name)',
-        'duration': 'Total duration (minutes)',
+        'duration': 'Total Duration (Mins)',
         'user_email': 'Email'
     })
     
     # Round duration to whole numbers
-    grouped_df['Total duration (minutes)'] = grouped_df['Total duration (minutes)'].round(0).astype(int)
+    grouped_df['Total Duration (Mins)'] = grouped_df['Total Duration (Mins)'].round(0).astype(int)
     
     # Reorder columns
-    columns = ['Name (original name)', 'Email', 'Total duration (minutes)', 'First Join Time (EST)']
+    columns = ['Name (original name)', 'Email', 'Total Duration (Mins)', 'Join Time (EST)']
     grouped_df = grouped_df[columns]
     
     # Save to CSV without index
