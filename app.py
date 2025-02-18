@@ -94,19 +94,22 @@ def get_zoom_meeting_report(meeting_uuid):
 def sanitize_filename(filename):
     return re.sub(r'[\/:*?"<>|]', '_', filename)
 
+Complete Updated Zoom Report Application
+
 def save_report_to_csv(participants, filename):
     """
     Processes Zoom participant data to match the official Zoom report format:
     - Keeps original names
     - Calculates total duration in minutes
     - Records first join time for each participant
-    - Handles cases where the same person joins multiple times
+    - Sorts by join time
+    - Returns meeting date, earliest join time, and participant count
     """
     df = pd.DataFrame(participants)
     
     if df.empty:
         print("No participants found.")
-        return None
+        return None, None, 0
 
     # Ensure correct data types for time calculations
     df['join_time'] = pd.to_datetime(df['join_time'])
@@ -122,14 +125,17 @@ def save_report_to_csv(participants, filename):
         'join_time': 'min'  # Get the earliest join time
     })
     
-    # Handle timezone conversion - assuming join_time is already in UTC
-    # Convert directly to EST without trying to localize first
-    est_tz = timezone(timedelta(hours=-5))
+    # Handle timezone conversion
     grouped_df['join_time'] = pd.to_datetime(grouped_df['join_time']).dt.tz_convert('US/Eastern')
     grouped_df['First Join Time (EST)'] = grouped_df['join_time'].dt.strftime('%Y-%m-%d %I:%M %p')
     
-    # Get meeting date for return value
+    # Sort by join time
+    grouped_df = grouped_df.sort_values('join_time')
+    
+    # Get meeting date and earliest join time for email subject
     meeting_date = grouped_df['join_time'].iloc[0].strftime('%Y-%m-%d')
+    earliest_join = grouped_df['join_time'].iloc[0].strftime('%I:%M %p')
+    participant_count = len(grouped_df)
     
     # Rename columns to match Zoom format
     grouped_df = grouped_df.rename(columns={
@@ -149,13 +155,13 @@ def save_report_to_csv(participants, filename):
     grouped_df.to_csv(filename, index=False)
     print(f"Report saved successfully: {filename}")
     
-    return meeting_date
+    return meeting_date, earliest_join, participant_count
 
-def send_email_report(to_email, meeting_date, body, attachment_path):
+def send_email_report(to_email, meeting_date, earliest_join, participant_count, body, attachment_path):
     message = MIMEMultipart()
     message['From'] = SENDER_EMAIL
     message['To'] = to_email
-    message['Subject'] = f"Zoom Report - {meeting_date}"  # Now using meeting date in subject
+    message['Subject'] = f"Zoom Report - {meeting_date} {earliest_join} - {participant_count} Participants"
     message.attach(MIMEText(body, "plain"))
 
     with open(attachment_path, "rb") as attachment:
@@ -185,11 +191,13 @@ def run_report():
 
             participants = get_zoom_meeting_report(meeting_uuid)
             if participants:
-                meeting_date = save_report_to_csv(participants, report_filename)
+                meeting_date, earliest_join, participant_count = save_report_to_csv(participants, report_filename)
                 if meeting_date:  # Only send if we successfully got the meeting date
                     send_email_report(
                         RECIPIENT_EMAIL,
                         meeting_date,
+                        earliest_join,
+                        participant_count,
                         "Attached is the Zoom meeting report.",
                         report_filename
                     )
