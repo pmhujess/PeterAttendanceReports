@@ -181,11 +181,16 @@ def run_report():
         start_date = end_date - timedelta(days=7)
         return render_template('run_report.html', 
                              start_date=start_date.strftime('%Y-%m-%d'),
-                             end_date=end_date.strftime('%Y-%m-%d'))
+                             end_date=end_date.strftime('%Y-%m-%d'),
+                             default_email=RECIPIENT_EMAIL)  # Pass the default email
     
     try:
         start_date = request.form.get('start_date')
         end_date = request.form.get('end_date')
+        recipient_email = request.form.get('recipient_email')
+        
+        if not recipient_email:
+            return jsonify({"error": "Recipient email is required"}), 400
         
         meetings = get_recent_meetings(start_date, end_date)
         if not meetings:
@@ -201,7 +206,7 @@ def run_report():
                 meeting_date, earliest_join, participant_count = save_report_to_csv(participants, report_filename)
                 if meeting_date:
                     send_email_report(
-                        RECIPIENT_EMAIL,
+                        recipient_email,  # Use the provided email instead of RECIPIENT_EMAIL
                         meeting_date,
                         earliest_join,
                         participant_count,
@@ -212,7 +217,7 @@ def run_report():
 
         return jsonify({
             "status": "Success!", 
-            "message": f"Generated and emailed {reports_sent} reports for meetings between {start_date} and {end_date}"
+            "message": f"Generated and emailed {reports_sent} reports to {recipient_email} for meetings between {start_date} and {end_date}"
         })
 
     except Exception as e:
