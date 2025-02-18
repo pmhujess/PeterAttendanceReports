@@ -41,9 +41,14 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            margin-right: 10px;
         }
         button:hover {
             background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
         }
         #status {
             margin-top: 20px;
@@ -58,19 +63,35 @@
             background-color: #f8d7da;
             color: #721c24;
         }
+        #reportsList {
+            margin-top: 20px;
+        }
+        .report-item {
+            padding: 10px;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+        }
+        .report-item input[type="checkbox"] {
+            margin-right: 10px;
+        }
+        .report-item:hover {
+            background-color: #f5f5f5;
+        }
+        #emailSection {
+            margin-top: 20px;
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Generate Zoom Attendance Report</h1>
+        <h1>Generate Peter's Zoom Attendance Report</h1>
         <p>Select a date range to generate reports for Monday/Tuesday meetings between 5 AM - 9 AM EST.</p>
         
         <form id="reportForm">
-            <div class="form-group">
-                <label for="recipient_email">Recipient Email:</label>
-                <input type="email" id="recipient_email" name="recipient_email" value="{{ default_email }}" required>
-            </div>
-            
             <div class="form-group">
                 <label for="start_date">Start Date:</label>
                 <input type="date" id="start_date" name="start_date" value="{{ start_date }}" required>
@@ -81,32 +102,110 @@
                 <input type="date" id="end_date" name="end_date" value="{{ end_date }}" required>
             </div>
             
-            <button type="submit">Generate Reports</button>
+            <button type="submit" id="generateBtn">Generate Reports</button>
         </form>
+        
+        <div id="reportsList"></div>
+        
+        <div id="emailSection">
+            <div class="form-group">
+                <label for="recipient_email">Recipient Email:</label>
+                <input type="email" id="recipient_email" name="recipient_email" value="{{ default_email }}" required>
+            </div>
+            <button id="sendBtn" disabled>Send Selected Reports</button>
+        </div>
         
         <div id="status" style="display: none;"></div>
     </div>
 
     <script>
-        document.getElementById('reportForm').addEventListener('submit', async (e) => {
+        const reportForm = document.getElementById('reportForm');
+        const emailSection = document.getElementById('emailSection');
+        const reportsList = document.getElementById('reportsList');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusDiv = document.getElementById('status');
+        
+        reportForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const statusDiv = document.getElementById('status');
-            const button = e.target.querySelector('button');
+            const button = document.getElementById('generateBtn');
             button.disabled = true;
             button.textContent = 'Generating...';
             
             try {
                 const formData = new FormData(e.target);
+                formData.append('action', 'generate');
                 const response = await axios.post('/run-report', formData);
-                statusDiv.textContent = response.data.message || response.data.status;
+                
+                if (response.data.reports && response.data.reports.length > 0) {
+                    displayReports(response.data.reports);
+                    emailSection.style.display = 'block';
+                } else {
+                    statusDiv.textContent = 'No reports generated for the selected date range.';
+                    statusDiv.className = 'error';
+                    statusDiv.style.display = 'block';
+                }
+            } catch (error) {
+                statusDiv.textContent = error.response?.data?.error || 'An error occurred';
+                statusDiv.className = 'error';
+                statusDiv.style.display = 'block';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Generate Reports';
+            }
+        });
+
+        function displayReports(reports) {
+            reportsList.innerHTML = reports.map(report => `
+                <div class="report-item">
+                    <input type="checkbox" name="report" value='${JSON.stringify(report)}'>
+                    <span>${report.subject}</span>
+                </div>
+            `).join('');
+            
+            // Add event listeners to checkboxes
+            document.querySelectorAll('input[name="report"]').forEach(checkbox => {
+                checkbox.addEventListener('change', updateSendButton);
+            });
+            
+            updateSendButton();
+        }
+
+        function updateSendButton() {
+            const checkedReports = document.querySelectorAll('input[name="report"]:checked');
+            sendBtn.disabled = checkedReports.length === 0;
+        }
+
+        sendBtn.addEventListener('click', async () => {
+            const email = document.getElementById('recipient_email').value;
+            if (!email) {
+                statusDiv.textContent = 'Please enter a recipient email address.';
+                statusDiv.className = 'error';
+                statusDiv.style.display = 'block';
+                return;
+            }
+
+            const checkedReports = Array.from(document.querySelectorAll('input[name="report"]:checked'))
+                .map(checkbox => checkbox.value);
+
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+
+            try {
+                const formData = new FormData();
+                formData.append('action', 'send');
+                formData.append('recipient_email', email);
+                checkedReports.forEach(report => formData.append('selected_reports[]', report));
+
+                const response = await axios.post('/run-report', formData);
+                statusDiv.textContent = response.data.message;
                 statusDiv.className = 'success';
             } catch (error) {
                 statusDiv.textContent = error.response?.data?.error || 'An error occurred';
                 statusDiv.className = 'error';
             } finally {
                 statusDiv.style.display = 'block';
-                button.disabled = false;
-                button.textContent = 'Generate Reports';
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send Selected Reports';
             }
         });
     </script>

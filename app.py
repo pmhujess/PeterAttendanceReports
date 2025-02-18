@@ -182,43 +182,69 @@ def run_report():
         return render_template('run_report.html', 
                              start_date=start_date.strftime('%Y-%m-%d'),
                              end_date=end_date.strftime('%Y-%m-%d'),
-                             default_email=RECIPIENT_EMAIL)  # Pass the default email
-    
+                             default_email=RECIPIENT_EMAIL)
+
     try:
         start_date = request.form.get('start_date')
         end_date = request.form.get('end_date')
-        recipient_email = request.form.get('recipient_email')
+        action = request.form.get('action', 'generate')  # 'generate' or 'send'
         
-        if not recipient_email:
-            return jsonify({"error": "Recipient email is required"}), 400
-        
-        meetings = get_recent_meetings(start_date, end_date)
-        if not meetings:
-            return jsonify({"status": "No meetings found in target range."})
+        if action == 'generate':
+            # First step: Generate reports and return their info
+            meetings = get_recent_meetings(start_date, end_date)
+            if not meetings:
+                return jsonify({"status": "No meetings found in target range."})
 
-        reports_sent = 0
-        for meeting_uuid, _ in meetings:
-            sanitized_uuid = sanitize_filename(meeting_uuid)
-            report_filename = f"zoom_report_{sanitized_uuid}.csv"
+            reports_info = []
+            for meeting_uuid, _ in meetings:
+                sanitized_uuid = sanitize_filename(meeting_uuid)
+                report_filename = f"zoom_report_{sanitized_uuid}.csv"
 
-            participants = get_zoom_meeting_report(meeting_uuid)
-            if participants:
-                meeting_date, earliest_join, participant_count = save_report_to_csv(participants, report_filename)
-                if meeting_date:
+                participants = get_zoom_meeting_report(meeting_uuid)
+                if participants:
+                    meeting_date, earliest_join, participant_count = save_report_to_csv(participants, report_filename)
+                    if meeting_date:
+                        reports_info.append({
+                            "filename": report_filename,
+                            "subject": f"Zoom Report - {meeting_date} {earliest_join} - {participant_count} Participants",
+                            "date": meeting_date,
+                            "participants": participant_count
+                        })
+
+            return jsonify({
+                "status": "Success!",
+                "reports": reports_info
+            })
+
+        elif action == 'send':
+            # Second step: Send selected reports
+            recipient_email = request.form.get('recipient_email')
+            selected_reports = request.form.getlist('selected_reports[]')
+            
+            if not recipient_email:
+                return jsonify({"error": "Recipient email is required"}), 400
+            if not selected_reports:
+                return jsonify({"error": "No reports selected"}), 400
+
+            for report in selected_reports:
+                try:
+                    # Parse the report info from the string
+                    report_data = eval(report)  # Be careful with eval, sanitize input in production
                     send_email_report(
-                        recipient_email,  # Use the provided email instead of RECIPIENT_EMAIL
-                        meeting_date,
-                        earliest_join,
-                        participant_count,
+                        recipient_email,
+                        report_data['date'],
+                        report_data['time'],
+                        report_data['count'],
                         "Attached is the Zoom meeting report.",
-                        report_filename
+                        report_data['filename']
                     )
-                    reports_sent += 1
+                except Exception as e:
+                    print(f"Error sending report: {str(e)}")
 
-        return jsonify({
-            "status": "Success!", 
-            "message": f"Generated and emailed {reports_sent} reports to {recipient_email} for meetings between {start_date} and {end_date}"
-        })
+            return jsonify({
+                "status": "Success!",
+                "message": f"Sent {len(selected_reports)} selected reports to {recipient_email}"
+            })
 
     except Exception as e:
         return jsonify({"error": str(e)})
