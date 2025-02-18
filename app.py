@@ -122,8 +122,10 @@ def save_report_to_csv(participants, filename):
         'join_time': 'min'  # Get the earliest join time
     })
     
-    # Convert join_time to EST and format it
-    grouped_df['join_time'] = pd.to_datetime(grouped_df['join_time']).dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+    # Handle timezone conversion - assuming join_time is already in UTC
+    # Convert directly to EST without trying to localize first
+    est_tz = timezone(timedelta(hours=-5))
+    grouped_df['join_time'] = pd.to_datetime(grouped_df['join_time']).dt.tz_convert('US/Eastern')
     grouped_df['First Join Time (EST)'] = grouped_df['join_time'].dt.strftime('%Y-%m-%d %I:%M %p')
     
     # Get meeting date for return value
