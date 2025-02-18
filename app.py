@@ -10,7 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify
-import pandas as pd  # Add this import at the top of the file
+import pandas as pd  # Ensure Pandas is imported
 
 # Flask app setup
 app = Flask(__name__)
@@ -100,7 +100,7 @@ def get_zoom_meeting_report(meeting_uuid):
 def sanitize_filename(filename):
     return re.sub(r'[\/:*?"<>|]', '_', filename)  # Replaces invalid characters with `_`
 
-# 🔹 Function: Save Report to CSV
+# 🔹 Function: Save Report to CSV with Corrected Duration
 def save_report_to_csv(participants, filename):
     """
     Processes Zoom participant data to:
@@ -119,20 +119,20 @@ def save_report_to_csv(participants, filename):
     df['join_time'] = pd.to_datetime(df['join_time'])
     df['leave_time'] = pd.to_datetime(df['leave_time'])
 
-    # Group by Email and calculate correct duration
+    # Calculate total time per user by summing all join/rejoin durations
+    df['duration'] = (df['leave_time'] - df['join_time']).dt.total_seconds() / 60  # Convert to minutes
+
+    # Aggregate duration for each unique user
     grouped_df = df.groupby('user_email').agg({
         'name': 'first',  # Keep the first name entry
         'join_time': 'min',  # First time they joined
         'leave_time': 'max',  # Last time they left
+        'duration': 'sum'  # Sum up all time in the meeting
     }).reset_index()
-
-    # Calculate the correct duration in minutes
-    grouped_df['duration'] = (grouped_df['leave_time'] - grouped_df['join_time']).dt.total_seconds() / 60
 
     # Save to CSV
     grouped_df.to_csv(filename, index=False)
     print(f"Report saved successfully: {filename}")
-
 
 # 🔹 Function: Send Email Report
 def send_email_report(to_email, subject, body, attachment_path):
@@ -179,8 +179,3 @@ def run_report():
 
     except Exception as e:
         return jsonify({"error": str(e)})
-
-# 🔹 Run the app on Render-friendly settings
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))  # Render assigns a dynamic port
-    app.run(host='0.0.0.0', port=port, debug=True)
