@@ -9,8 +9,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta, timezone
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template, request
 import pandas as pd
+import pytz
 
 # Flask app setup
 app = Flask(__name__)
@@ -55,12 +56,16 @@ def get_zoom_user_id():
     else:
         raise Exception(f"Failed to fetch user ID: {response.text}")
 
-def get_recent_meetings():
+def get_recent_meetings(start_date=None, end_date=None):
     zoom_user_id = get_zoom_user_id()
-    one_week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d')
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    
+    # If no dates provided, use default 7-day range
+    if not start_date:
+        start_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d')
+    if not end_date:
+        end_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
-    url = f"{BASE_URL}/report/users/{zoom_user_id}/meetings?from={one_week_ago}&to={today}"
+    url = f"{BASE_URL}/report/users/{zoom_user_id}/meetings?from={start_date}&to={end_date}"
     headers = {"Authorization": f"Bearer {get_zoom_access_token()}", "Content-Type": "application/json"}
     response = requests.get(url, headers=headers)
 
@@ -72,7 +77,7 @@ def get_recent_meetings():
             start_time_str = meeting.get("start_time", "")
             if start_time_str:
                 start_time = datetime.strptime(start_time_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                est_time = start_time.astimezone(timezone(timedelta(hours=-5)))
+                est_time = start_time.astimezone(pytz.timezone('US/Eastern'))
                 if est_time.weekday() in TARGET_DAYS and TARGET_START_HOUR <= est_time.hour < TARGET_END_HOUR:
                     filtered_meetings.append((meeting["uuid"], est_time))
         
@@ -117,7 +122,7 @@ def save_report_to_csv(participants, filename):
     
     # Handle timezone conversion
     grouped_df['join_time'] = pd.to_datetime(grouped_df['join_time']).dt.tz_convert('US/Eastern')
-    grouped_df['Join Time (EST)'] = grouped_df['join_time'].dt.strftime('%Y-%m-%d %I:%M %p')
+    grouped_df['First Join Time (EST)'] = grouped_df['join_time'].dt.strftime('%Y-%m-%d %I:%M %p')
     
     # Sort by join time
     grouped_df = grouped_df.sort_values('join_time')
@@ -130,15 +135,15 @@ def save_report_to_csv(participants, filename):
     # Rename columns to match Zoom format
     grouped_df = grouped_df.rename(columns={
         'name': 'Name (original name)',
-        'duration': 'Total Duration (Mins)',
+        'duration': 'Total duration (minutes)',
         'user_email': 'Email'
     })
     
     # Round duration to whole numbers
-    grouped_df['Total Duration (Mins)'] = grouped_df['Total Duration (Mins)'].round(0).astype(int)
+    grouped_df['Total duration (minutes)'] = grouped_df['Total duration (minutes)'].round(0).astype(int)
     
     # Reorder columns
-    columns = ['Name (original name)', 'Email', 'Total Duration (Mins)', 'Join Time (EST)']
+    columns = ['Name (original name)', 'Email', 'Total duration (minutes)', 'First Join Time (EST)']
     grouped_df = grouped_df[columns]
     
     # Save to CSV without index
@@ -166,15 +171,27 @@ def send_email_report(to_email, meeting_date, earliest_join, participant_count, 
 
 @app.route('/')
 def home():
-    return "Flask App is Running! Try /run-report"
+    return render_template('run_report.html')
 
-@app.route('/run-report', methods=['GET'])
+@app.route('/run-report', methods=['GET', 'POST'])
 def run_report():
+    if request.method == 'GET':
+        # Default date range
+        end_date = datetime.now(pytz.timezone('US/Eastern'))
+        start_date = end_date - timedelta(days=7)
+        return render_template('run_report.html', 
+                             start_date=start_date.strftime('%Y-%m-%d'),
+                             end_date=end_date.strftime('%Y-%m-%d'))
+    
     try:
-        meetings = get_recent_meetings()
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        
+        meetings = get_recent_meetings(start_date, end_date)
         if not meetings:
             return jsonify({"status": "No meetings found in target range."})
 
+        reports_sent = 0
         for meeting_uuid, _ in meetings:
             sanitized_uuid = sanitize_filename(meeting_uuid)
             report_filename = f"zoom_report_{sanitized_uuid}.csv"
@@ -191,8 +208,12 @@ def run_report():
                         "Attached is the Zoom meeting report.",
                         report_filename
                     )
+                    reports_sent += 1
 
-        return jsonify({"status": "Report Generated & Emailed!", "meetings_processed": len(meetings)})
+        return jsonify({
+            "status": "Success!", 
+            "message": f"Generated and emailed {reports_sent} reports for meetings between {start_date} and {end_date}"
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)})
