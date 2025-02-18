@@ -74,7 +74,7 @@ def get_recent_meetings():
                 start_time = datetime.strptime(start_time_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 est_time = start_time.astimezone(timezone(timedelta(hours=-5)))
                 if est_time.weekday() in TARGET_DAYS and TARGET_START_HOUR <= est_time.hour < TARGET_END_HOUR:
-                    filtered_meetings.append((meeting["uuid"], est_time))  # Now returning tuple of uuid and time
+                    filtered_meetings.append((meeting["uuid"], est_time))
         
         return filtered_meetings
     else:
@@ -94,17 +94,7 @@ def get_zoom_meeting_report(meeting_uuid):
 def sanitize_filename(filename):
     return re.sub(r'[\/:*?"<>|]', '_', filename)
 
-Complete Updated Zoom Report Application
-
 def save_report_to_csv(participants, filename):
-    """
-    Processes Zoom participant data to match the official Zoom report format:
-    - Keeps original names
-    - Calculates total duration in minutes
-    - Records first join time for each participant
-    - Sorts by join time
-    - Returns meeting date, earliest join time, and participant count
-    """
     df = pd.DataFrame(participants)
     
     if df.empty:
@@ -120,9 +110,9 @@ def save_report_to_csv(participants, filename):
     
     # Group by name with required aggregations
     grouped_df = df.groupby('name', as_index=False).agg({
-        'duration': 'sum',  # Sum up all time in the meeting
-        'user_email': 'first',  # Keep the email if available
-        'join_time': 'min'  # Get the earliest join time
+        'duration': 'sum',
+        'user_email': 'first',
+        'join_time': 'min'
     })
     
     # Handle timezone conversion
@@ -192,7 +182,7 @@ def run_report():
             participants = get_zoom_meeting_report(meeting_uuid)
             if participants:
                 meeting_date, earliest_join, participant_count = save_report_to_csv(participants, report_filename)
-                if meeting_date:  # Only send if we successfully got the meeting date
+                if meeting_date:
                     send_email_report(
                         RECIPIENT_EMAIL,
                         meeting_date,
