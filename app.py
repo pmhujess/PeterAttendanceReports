@@ -10,12 +10,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify
-import pandas as pd  # Ensure Pandas is imported
+import pandas as pd
 
 # Flask app setup
 app = Flask(__name__)
 
-# Zoom API Credentials (Replace with actual credentials)
+# Zoom API Credentials
 ZOOM_ACCOUNT_ID = "bVpWBvoVTdeRlnfMBxfTJQ"
 ZOOM_CLIENT_ID = "jAlEOB2cRHugcQt2bTjGAA"
 ZOOM_CLIENT_SECRET = "s6VQLn3iHqgXfcUPRLikX9UIMvQgzg7N"
@@ -27,11 +27,10 @@ TARGET_END_HOUR = 9  # 9 AM EST
 # Email Configuration
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SENDER_EMAIL = "jessica@pmhu.org"  # 🔹 Change this
-SENDER_PASSWORD = "zeaj jskj lfsf rvld"  # 🔹 Change this (Use App Password)
-RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "jessica@pmhu.org")  # Uses default if not set # 🔹 Change this
+SENDER_EMAIL = "jessica@pmhu.org"
+SENDER_PASSWORD = "zeaj jskj lfsf rvld"
+RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "jessica@pmhu.org")
 
-# 🔹 Function: Get Zoom API Access Token
 def get_zoom_access_token():
     url = "https://zoom.us/oauth/token"
     payload = {"grant_type": "account_credentials", "account_id": ZOOM_ACCOUNT_ID}
@@ -43,12 +42,10 @@ def get_zoom_access_token():
     else:
         raise Exception(f"Failed to get access token: {response.text}")
 
-# 🔹 Function: Encode API Credentials
 def get_basic_auth_token():
     credentials = f"{ZOOM_CLIENT_ID}:{ZOOM_CLIENT_SECRET}"
     return base64.b64encode(credentials.encode()).decode()
 
-# 🔹 Function: Get Zoom User ID
 def get_zoom_user_id():
     url = f"{BASE_URL}/users/me"
     headers = {"Authorization": f"Bearer {get_zoom_access_token()}", "Content-Type": "application/json"}
@@ -58,7 +55,6 @@ def get_zoom_user_id():
     else:
         raise Exception(f"Failed to fetch user ID: {response.text}")
 
-# 🔹 Function: Get Zoom Meetings from the Past Week
 def get_recent_meetings():
     zoom_user_id = get_zoom_user_id()
     one_week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d')
@@ -76,15 +72,14 @@ def get_recent_meetings():
             start_time_str = meeting.get("start_time", "")
             if start_time_str:
                 start_time = datetime.strptime(start_time_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                est_time = start_time.astimezone(timezone(timedelta(hours=-5)))  # Convert UTC to EST
+                est_time = start_time.astimezone(timezone(timedelta(hours=-5)))
                 if est_time.weekday() in TARGET_DAYS and TARGET_START_HOUR <= est_time.hour < TARGET_END_HOUR:
-                    filtered_meetings.append(meeting["uuid"])
+                    filtered_meetings.append((meeting["uuid"], est_time))  # Now returning tuple of uuid and time
         
         return filtered_meetings
     else:
         raise Exception(f"Failed to fetch meetings: {response.text}")
 
-# 🔹 Function: Get Participants of a Meeting
 def get_zoom_meeting_report(meeting_uuid):
     encoded_uuid = urllib.parse.quote(meeting_uuid, safe='')
     url = f"{BASE_URL}/report/meetings/{encoded_uuid}/participants"
@@ -96,25 +91,22 @@ def get_zoom_meeting_report(meeting_uuid):
     else:
         raise Exception(f"Failed to fetch report: {response.text}")
 
-# 🔹 Function: Sanitize Filename (Remove Special Characters)
 def sanitize_filename(filename):
-    return re.sub(r'[\/:*?"<>|]', '_', filename)  # Replaces invalid characters with `_`
+    return re.sub(r'[\/:*?"<>|]', '_', filename)
 
-# 🔹 Function: Save Report to CSV with Corrected Duration
-# Modified save_report_to_csv function
 def save_report_to_csv(participants, filename):
     """
     Processes Zoom participant data to match the official Zoom report format:
     - Keeps original names
     - Calculates total duration in minutes
+    - Records first join time for each participant
     - Handles cases where the same person joins multiple times
     """
-    # Convert raw participant data to a DataFrame
     df = pd.DataFrame(participants)
     
     if df.empty:
         print("No participants found.")
-        return
+        return None
 
     # Ensure correct data types for time calculations
     df['join_time'] = pd.to_datetime(df['join_time'])
@@ -123,12 +115,19 @@ def save_report_to_csv(participants, filename):
     # Calculate duration in minutes for each session
     df['duration'] = (df['leave_time'] - df['join_time']).dt.total_seconds() / 60
     
-    # Group by name (not email) to match Zoom's format
-    # Use the original name as provided by Zoom
+    # Group by name with required aggregations
     grouped_df = df.groupby('name', as_index=False).agg({
         'duration': 'sum',  # Sum up all time in the meeting
-        'user_email': 'first'  # Keep the email if available
+        'user_email': 'first',  # Keep the email if available
+        'join_time': 'min'  # Get the earliest join time
     })
+    
+    # Convert join_time to EST and format it
+    grouped_df['join_time'] = pd.to_datetime(grouped_df['join_time']).dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+    grouped_df['First Join Time (EST)'] = grouped_df['join_time'].dt.strftime('%Y-%m-%d %I:%M %p')
+    
+    # Get meeting date for return value
+    meeting_date = grouped_df['join_time'].iloc[0].strftime('%Y-%m-%d')
     
     # Rename columns to match Zoom format
     grouped_df = grouped_df.rename(columns={
@@ -140,23 +139,23 @@ def save_report_to_csv(participants, filename):
     # Round duration to whole numbers
     grouped_df['Total duration (minutes)'] = grouped_df['Total duration (minutes)'].round(0).astype(int)
     
-    # Reorder columns to match Zoom format
-    columns = ['Name (original name)', 'Email', 'Total duration (minutes)']
+    # Reorder columns
+    columns = ['Name (original name)', 'Email', 'Total duration (minutes)', 'First Join Time (EST)']
     grouped_df = grouped_df[columns]
     
     # Save to CSV without index
     grouped_df.to_csv(filename, index=False)
     print(f"Report saved successfully: {filename}")
+    
+    return meeting_date
 
-# 🔹 Function: Send Email Report
-def send_email_report(to_email, subject, body, attachment_path):
+def send_email_report(to_email, meeting_date, body, attachment_path):
     message = MIMEMultipart()
     message['From'] = SENDER_EMAIL
     message['To'] = to_email
-    message['Subject'] = subject
+    message['Subject'] = f"Zoom Report - {meeting_date}"  # Now using meeting date in subject
     message.attach(MIMEText(body, "plain"))
 
-    # Attach CSV Report
     with open(attachment_path, "rb") as attachment:
         part = MIMEApplication(attachment.read(), Name=attachment_path)
         part['Content-Disposition'] = f'attachment; filename="{attachment_path}"'
@@ -167,29 +166,36 @@ def send_email_report(to_email, subject, body, attachment_path):
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         server.sendmail(SENDER_EMAIL, to_email, message.as_string())
 
-# 🔹 Function: Home Page Route
 @app.route('/')
 def home():
     return "Flask App is Running! Try /run-report"
 
-# 🔹 Function: Run Zoom Report & Email
 @app.route('/run-report', methods=['GET'])
 def run_report():
     try:
-        meeting_uuids = get_recent_meetings()
-        if not meeting_uuids:
+        meetings = get_recent_meetings()
+        if not meetings:
             return jsonify({"status": "No meetings found in target range."})
 
-        for meeting_uuid in meeting_uuids:
-            sanitized_uuid = sanitize_filename(meeting_uuid)  # 🔹 Sanitize filename
+        for meeting_uuid, _ in meetings:
+            sanitized_uuid = sanitize_filename(meeting_uuid)
             report_filename = f"zoom_report_{sanitized_uuid}.csv"
 
             participants = get_zoom_meeting_report(meeting_uuid)
             if participants:
-                save_report_to_csv(participants, report_filename)
-                send_email_report(RECIPIENT_EMAIL, f"Zoom Report - {meeting_uuid}", "Attached is the Zoom meeting report.", report_filename)
+                meeting_date = save_report_to_csv(participants, report_filename)
+                if meeting_date:  # Only send if we successfully got the meeting date
+                    send_email_report(
+                        RECIPIENT_EMAIL,
+                        meeting_date,
+                        "Attached is the Zoom meeting report.",
+                        report_filename
+                    )
 
-        return jsonify({"status": "Report Generated & Emailed!", "meetings_processed": len(meeting_uuids)})
+        return jsonify({"status": "Report Generated & Emailed!", "meetings_processed": len(meetings)})
 
     except Exception as e:
         return jsonify({"error": str(e)})
+
+if __name__ == '__main__':
+    app.run(debug=True)
