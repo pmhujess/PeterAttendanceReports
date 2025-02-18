@@ -101,16 +101,17 @@ def sanitize_filename(filename):
     return re.sub(r'[\/:*?"<>|]', '_', filename)  # Replaces invalid characters with `_`
 
 # 🔹 Function: Save Report to CSV with Corrected Duration
+# Modified save_report_to_csv function
 def save_report_to_csv(participants, filename):
     """
-    Processes Zoom participant data to:
-    - Remove duplicates (group by email)
-    - Correctly calculate total time in the meeting.
+    Processes Zoom participant data to match the official Zoom report format:
+    - Keeps original names
+    - Calculates total duration in minutes
+    - Handles cases where the same person joins multiple times
     """
-
     # Convert raw participant data to a DataFrame
     df = pd.DataFrame(participants)
-
+    
     if df.empty:
         print("No participants found.")
         return
@@ -118,19 +119,32 @@ def save_report_to_csv(participants, filename):
     # Ensure correct data types for time calculations
     df['join_time'] = pd.to_datetime(df['join_time'])
     df['leave_time'] = pd.to_datetime(df['leave_time'])
-
-    # Calculate total time per user by summing all join/rejoin durations
-    df['duration'] = (df['leave_time'] - df['join_time']).dt.total_seconds() / 60  # Convert to minutes
-
-    # Aggregate duration for each unique user
-    grouped_df = df.groupby('user_email').agg({
-        'name': 'first',  # Keep the first name entry
-        'join_time': 'min',  # First time they joined
-        'leave_time': 'max',  # Last time they left
-        'duration': 'sum'  # Sum up all time in the meeting
-    }).reset_index()
-
-    # Save to CSV
+    
+    # Calculate duration in minutes for each session
+    df['duration'] = (df['leave_time'] - df['join_time']).dt.total_seconds() / 60
+    
+    # Group by name (not email) to match Zoom's format
+    # Use the original name as provided by Zoom
+    grouped_df = df.groupby('name', as_index=False).agg({
+        'duration': 'sum',  # Sum up all time in the meeting
+        'user_email': 'first'  # Keep the email if available
+    })
+    
+    # Rename columns to match Zoom format
+    grouped_df = grouped_df.rename(columns={
+        'name': 'Name (original name)',
+        'duration': 'Total duration (minutes)',
+        'user_email': 'Email'
+    })
+    
+    # Round duration to whole numbers
+    grouped_df['Total duration (minutes)'] = grouped_df['Total duration (minutes)'].round(0).astype(int)
+    
+    # Reorder columns to match Zoom format
+    columns = ['Name (original name)', 'Email', 'Total duration (minutes)']
+    grouped_df = grouped_df[columns]
+    
+    # Save to CSV without index
     grouped_df.to_csv(filename, index=False)
     print(f"Report saved successfully: {filename}")
 
